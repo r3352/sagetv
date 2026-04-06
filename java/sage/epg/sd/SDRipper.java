@@ -91,7 +91,6 @@ import static sage.epg.sd.SDErrors.MAX_IMAGE_DOWNLOADS_TRIAL;
 import static sage.epg.sd.SDErrors.SAGETV_UNKNOWN;
 import static sage.epg.sd.SDErrors.SERVICE_OFFLINE;
 import static sage.epg.sd.SDErrors.TOO_MANY_LOGINS;
-import static sage.epg.sd.SDSession.debugEnabled;
 
 public class SDRipper extends EPGDataSource
 {
@@ -243,10 +242,11 @@ public class SDRipper extends EPGDataSource
           propUsername = serverProp.toString();
           serverProp = SageTV.api("GetServerProperty", new Object[] { PROP_PASSWORD, null });
           propPassword = serverProp.toString();
+          //if (Sage.DBG) System.out.println("***EPG*** getting from CLIENT user/pass: username:" + username + " password:" + password);
         }
         catch (Throwable t)
         {
-          if (Sage.DBG) System.out.println("SDRipper:openNewSession: ERROR executing server API call of:" + t);
+          if (Sage.DBG) System.out.println("ERROR executing server API call of:" + t);
           t.printStackTrace();
           propUsername = null;
           propPassword = null;
@@ -256,7 +256,10 @@ public class SDRipper extends EPGDataSource
         propPassword = Sage.get(PROP_PASSWORD, null);
     }
     
+    //if (Sage.DBG) System.out.println("***EPG*** checking for user/pass: username:" + username + " password:" + password);
+    
     //get user/pass from old sdauth file
+    //if (Sage.DBG) System.out.println("***EPG*** reading user/pass from old file");
     File authFile = new File(AUTH_FILE);
     if (!authFile.exists() || authFile.length() == 0)
       throw new SDException(SDErrors.SAGETV_NO_PASSWORD);
@@ -267,14 +270,14 @@ public class SDRipper extends EPGDataSource
       String auth = reader.readLine();
       if (auth == null)
       {
-        if (Sage.DBG) System.out.println("SDRipper:openNewSession: Error: sdauth file is empty.");
+        if (Sage.DBG) System.out.println("SDEPG Error: sdauth file is empty.");
         throw new SDException(SDErrors.SAGETV_NO_PASSWORD);
       }
       int split = auth.indexOf(' ');
       // If the file is not formatted correctly, it's as good as not existing.
       if (split == -1)
       {
-        if (Sage.DBG) System.out.println("SDRipper:openNewSession: Error: sdauth file is missing a space between the username and password.");
+        if (Sage.DBG) System.out.println("SDEPG Error: sdauth file is missing a space between the username and password.");
         throw new SDException(SDErrors.SAGETV_NO_PASSWORD);
       }
 
@@ -304,8 +307,9 @@ public class SDRipper extends EPGDataSource
             // This will throw an exception if there are any issues connecting.
             returnValue = new SDSageSession(propUsername, propPassword);
             authenticated = true;
+            if (Sage.DBG) System.out.println("SDEPG authenticated using prop based user/pass PASSED: username:" + propUsername + " password:" + propPassword);
         } catch (Exception e) {
-            if (Sage.DBG) System.out.println("SDRipper:openNewSession: Checking for prop based user/pass FAILED");
+            if (Sage.DBG) System.out.println("SDEPG checking for prop based user/pass FAILED: username:" + propUsername + " password:" + propPassword);
         }
     }
     
@@ -317,21 +321,22 @@ public class SDRipper extends EPGDataSource
             authenticated = true;
             Sage.put(PROP_USERNAME, fileUsername);
             Sage.put(PROP_PASSWORD, filePassword);
+            if (Sage.DBG) System.out.println("SDEPG authenticated using file based user/pass PASSED: username:" + fileUsername + " password:" + filePassword);
         } catch (Exception e) {
-            if (Sage.DBG) System.out.println("SDRipper:openNewSession: Checking for file based user/pass FAILED");
+            if (Sage.DBG) System.out.println("SDEPG checking for file based user/pass FAILED: username:" + fileUsername + " password:" + filePassword);
         }
     }
 
     //we have now have tried both prop and file based user/pass
     if(!authenticated){
-        if (Sage.DBG) System.out.println("SDRipper:openNewSession: ERROR: checking for BOTH user/pass FAILED: throwing SAGETV_NO_PASSWORD");
+        if (Sage.DBG) System.out.println("SDEPG ERROR: checking for BOTH user/pass FAILED: throwing SAGETV_NO_PASSWORD");
         throw new SDException(SDErrors.SAGETV_NO_PASSWORD);
     }
     
     // We have just successfully authenticated, so this needs to be cleared so that updates can
     // start immediately.
     SDRipper.retryWait = 0;
-    if (Sage.DBG&& debugEnabled()) System.out.println("SDRipper:openNewSession: Successfully got token: " + returnValue.token);
+    if (Sage.DBG) System.out.println("SDEPG Successfully got token: " + returnValue.token);
     return returnValue;
   }
 
@@ -2947,19 +2952,6 @@ public class SDRipper extends EPGDataSource
     {
       if (Sage.DBG) System.out.println("SDEPG Unable to use the Schedules Direct service at this time.");
       return false;
-    }
-    
-    try {
-          //2025-11-14 add SD Health check to avoid running if SD has the account blocked
-        if(SDUtils.isSDBlocked()){
-            if (Sage.DBG) System.out.println("SDEPG Account is blocked: Unable to use the Schedules Direct service at this time.");
-            return false;
-        } } catch (IOException ex) {
-            if (Sage.DBG) System.out.println("SDEPG Account is blocked: Unable to use the Schedules Direct service at this time. " + ex.getMessage());
-            return false;
-    } catch (SDException ex) {
-          if (Sage.DBG) System.out.println("SDEPG Account is blocked: Unable to use the Schedules Direct service at this time. " + ex.getMessage());
-          return false;
     }
 
     try

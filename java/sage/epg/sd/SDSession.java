@@ -58,6 +58,8 @@ import java.security.InvalidParameterException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Collection;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public abstract class SDSession
 {
@@ -83,7 +85,7 @@ public abstract class SDSession
   // The character set to be used for outgoing communications.
   protected static final Charset OUT_CHARSET = StandardCharsets.UTF_8;
   // The expected character set to be used for incoming communications.
-  public static final Charset IN_CHARSET = StandardCharsets.ISO_8859_1;
+  protected static final Charset IN_CHARSET = StandardCharsets.ISO_8859_1;
 
   // These are set in the static constructor because they can throw format exceptions.
   // Returns a token if the credentials are valid.
@@ -93,9 +95,7 @@ public abstract class SDSession
   // Get the current account status/saved lineups.
   private static final URL GET_STATUS;
   // Get a list of available services.
-  public static final URL GET_AVAILABLE;
-  // Get weather the accounts ip is blocked.
-  public static final URL GET_IS_BLOCKED;
+  private static final URL GET_AVAILABLE;
   // Get the lineups associated with the authenticated account.
   private static final URL GET_LINEUPS;
   // Get requested guide data for specific programs.
@@ -116,7 +116,6 @@ public abstract class SDSession
     URL newGetTokenCurrent;
     URL newGetStatus;
     URL newGetAvailable;
-    URL newGetIsBlocked;
     URL newGetLineups;
     URL newGetPrograms;
     URL newGetSeriesDesc;
@@ -130,7 +129,6 @@ public abstract class SDSession
       newGetTokenCurrent = new URL(URL_VERSIONED + "/token/current");
       newGetStatus = new URL(URL_VERSIONED + "/status");
       newGetAvailable = new URL(URL_VERSIONED + "/available");
-      newGetIsBlocked = new URL(URL_VERSIONED + "/ip_isblocked");
       newGetLineups = new URL(URL_VERSIONED + "/lineups");
       newGetPrograms = new URL(URL_VERSIONED + "/programs");
       newGetSeriesDesc = new URL(URL_VERSIONED + "/metadata/description/");
@@ -148,7 +146,6 @@ public abstract class SDSession
       newGetTokenCurrent = null;
       newGetStatus = null;
       newGetAvailable = null;
-      newGetIsBlocked = null;
       newGetLineups = null;
       newGetPrograms = null;
       newGetSeriesDesc = null;
@@ -161,7 +158,6 @@ public abstract class SDSession
     GET_TOKEN_CURRENT = newGetTokenCurrent;
     GET_STATUS = newGetStatus;
     GET_AVAILABLE = newGetAvailable;
-    GET_IS_BLOCKED = newGetIsBlocked;
     GET_LINEUPS = newGetLineups;
     GET_PROGRAMS = newGetPrograms;
     GET_SERIES_DESC = newGetSeriesDesc;
@@ -388,6 +384,8 @@ public abstract class SDSession
    */
   public synchronized void authenticate() throws IOException, SDException
   {
+
+    //if(Sage.DBG) System.out.println("SDSession/authenticate: checking existing token:" + token + " with expiry:" + tokenExpiration + " against System:" + (System.currentTimeMillis()/1000));
       
     // The token is still valid.
     if (System.currentTimeMillis()/1000 < tokenExpiration && token != null)
@@ -399,10 +397,6 @@ public abstract class SDSession
     // Set the token to null so if we are getting a new token, it doesn't send the old token along
     // for the authentication request.
     token = null;
-    if(SDUtils.isSDBlocked()){
-        if(Sage.DBG) System.out.println("SDSession/authenticate: Account is blocked.  Contact SD to resolve.");
-        return;
-    }
 
     JsonObject authRequest = new JsonObject();
     authRequest.addProperty("username", username);
@@ -958,9 +952,7 @@ public abstract class SDSession
     JsonArray submit = new JsonArray();
     for (String program : programs)
     {
-      if(SDUtils.isValidProgramID(program)){
-          submit.add(SDUtils.fromSageTVtoProgram(program));
-      }
+      submit.add(SDUtils.fromSageTVtoProgram(program));
     }
 
     SDProgram[] returnValues = postAuthJson(GET_PROGRAMS, SDProgram[].class, submit);
@@ -1112,12 +1104,16 @@ public abstract class SDSession
     JsonArray submit = new JsonArray();
     for (String program : programs)
     {
+      //08-12-2025 jusjoken - convert program to 14 chars needed by SD
+      program = SDUtils.fromSageTVtoProgram(program);
+      //08-12-2025 jusjoken - the below should no longer be required - remove after testing
       //03-01-2025 jusjoken: added validation for program ids
       //first check if its already formated correctly
-      if(SDUtils.isValidProgramID(program)){
-      //08-12-2025 jusjoken - convert program to 14 chars needed by SD
-        program = SDUtils.fromSageTVtoProgram(program);
+      if(SDUtils.isValidShortProgramID(program)){
         submit.add(program);
+      }else if(SDUtils.isValidProgramID(program)){  //valid BUT is not shortend to 10
+        submit.add(program);  //submit as is as SD now handles the 14 character program ids as well
+        //submit.add(program.substring(0, 10));
       }else{
         if (Sage.DBG) System.out.println("getProgramImages: INVALID program ID - SKIPPING:" + program);
       }
@@ -1268,7 +1264,7 @@ public abstract class SDSession
     if (programId == null || programId.length() == 0)
       return null;
 
-    if (SDUtils.isValidProgramID(programId))
+    if (programId.length() == 12)
       programId = SDUtils.fromSageTVtoProgram(programId);
 
     // A token is now required to perform this lookup.
